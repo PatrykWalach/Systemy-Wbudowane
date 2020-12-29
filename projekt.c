@@ -2,20 +2,27 @@
 #define TIMER_REFRESH_RATE_TL 18
 #define TIMER_REFRESH_RATE_TH 0
 #define TIMER_REFRESH_RATE 200
-#define TIMER_MODE TMOD_13bit
-#define digits7SegmentDisplayLength 6
+#define TIMER_MODE Tmod_13_BIT
+#define timerDisplayDigitsLength 6
 
-enum TMODs { TMOD_13bit = 0, TMOD_16bit = 1, TMOD_8bit = 2, TMOD_2x8bit = 3 };
+enum Tmods {
+  Tmod_13_BIT = 0,
+  Tmod_16_BIT = 1,
+  Tmod_8_BIT = 2,
+  Tmod_2_X_8_BIT = 3
+};
 
-volatile unsigned char refreshed7SegmentDisplay;
-volatile unsigned char digits7SegmentDisplay[digits7SegmentDisplayLength];
-volatile unsigned char edited7SegmentDisplaySection;
-volatile unsigned char is7SegmentDisplayEdited;
+enum Time { Time_SECONDS = 0, Time_MINUTES = 1, Time_HOURS = 2 };
+
+volatile unsigned char timerDisplayRefreshed;
+volatile unsigned char timerDisplayDigits[timerDisplayDigitsLength];
+volatile unsigned char timerDisplayEditedSection;
+volatile unsigned char isTimerDisplayEdited;
 
 __xdata __at(0x0FF38) volatile unsigned char DISPLAY_DATA;
 __xdata __at(0x0FF30) volatile unsigned char DISPLAY_REFRESHED;
 
-__code unsigned char digitTo7SegmentDisplayData[] = {
+__code unsigned char timerDisplayDigitToData[] = {
     0x3F,  // ;0
     0x06,  // ;1
     0x5B,  // ;2
@@ -28,33 +35,33 @@ __code unsigned char digitTo7SegmentDisplayData[] = {
     0x6F,  // ;9
 };
 
-void refresh7SegmentDisplay() {
+void timerDisplayRefresh() {
   P1_6 = 1;
 
-  refreshed7SegmentDisplay++;
-  if (refreshed7SegmentDisplay >= digits7SegmentDisplayLength) {
-    refreshed7SegmentDisplay = 0;
+  timerDisplayRefreshed++;
+  if (timerDisplayRefreshed >= timerDisplayDigitsLength) {
+    timerDisplayRefreshed = 0;
   }
 
-  DISPLAY_REFRESHED = 1 << refreshed7SegmentDisplay;
+  DISPLAY_REFRESHED = 1 << timerDisplayRefreshed;
 
-  DISPLAY_DATA = digitTo7SegmentDisplayData
-      [digits7SegmentDisplay[refreshed7SegmentDisplay]];
+  DISPLAY_DATA =
+      timerDisplayDigitToData[timerDisplayDigits[timerDisplayRefreshed]];
 
   P1_6 = 0;
 }
 
-void init7SegmentDisplay() {
+void timerDisplayinit() {
   unsigned char i;
   P1_6 = 1;
-  refreshed7SegmentDisplay = 0;
-  DISPLAY_REFRESHED = 1 << refreshed7SegmentDisplay;
+  timerDisplayRefreshed = 0;
+  DISPLAY_REFRESHED = 1 << timerDisplayRefreshed;
 
   for (i = 0; i < 6; i++) {
-    digits7SegmentDisplay[i] = 0;
+    timerDisplayDigits[i] = 0;
   }
 
-  is7SegmentDisplayEdited = 0;
+  isTimerDisplayEdited = 0;
   P1_6 = 0;
 }
 
@@ -97,7 +104,7 @@ unsigned int prevTime[3];
 
 void initMultiplexKeyboard() {
   unsigned char i = 0;
-  edited7SegmentDisplaySection = 0;
+  timerDisplayEditedSection = 0;
   multiplexKeysPressed = 0;
 
   for (i = 0; i < 3; i++) {
@@ -111,7 +118,7 @@ void readMultiplexKeyboard() {
   multiplexKeysPressed = 0;
   P1_6 = 1;
 
-  for (i = 0; i < digits7SegmentDisplayLength; i++) {
+  for (i = 0; i < timerDisplayDigitsLength; i++) {
     key = 1 << i;
     DISPLAY_REFRESHED = key;
     if (P3_5) {
@@ -124,7 +131,7 @@ void readMultiplexKeyboard() {
   multiplexKeyups = (previousMultiplexKeysPressed ^ multiplexKeysPressed) &
                     multiplexKeysPressed;
 
-  DISPLAY_REFRESHED = 1 << refreshed7SegmentDisplay;
+  DISPLAY_REFRESHED = 1 << timerDisplayRefreshed;
   P1_6 = 0;
 }
 
@@ -136,44 +143,48 @@ void updateTime() {
   unsigned char i;
 
   for (i = 0; i < 3; i++) {
-    digits7SegmentDisplay[i * 2 + 1] = time[i] / 10;
-    digits7SegmentDisplay[i * 2] = time[i] % 10;
+    timerDisplayDigits[i * 2 + 1] = time[i] / 10;
+    timerDisplayDigits[i * 2] = time[i] % 10;
   }
 }
 
-void update7SegmentDisplaySection(
-    unsigned char nextEdited7SegmentDisplaySection) {
+void timerDisplayUpdateSection(unsigned char nextTimerDisplayEditedSection) {
+  unsigned char i;
+
   updateTime();
-  edited7SegmentDisplaySection = nextEdited7SegmentDisplaySection;
+  timerDisplayEditedSection = nextTimerDisplayEditedSection;
 
-  digits7SegmentDisplay[nextEdited7SegmentDisplaySection * 2] = 10;
-  digits7SegmentDisplay[nextEdited7SegmentDisplaySection * 2 + 1] = 10;
+  timerDisplayDigits[timerDisplayEditedSection * 2] = 10;
+  timerDisplayDigits[timerDisplayEditedSection * 2 + 1] = 10;
 
-  // if (is7SegmentDisplayEdited == 1) {
-  //   return;
-  // }
+  if (isTimerDisplayEdited) {
+    return;
+  }
 
   // prevTime = time;
-  is7SegmentDisplayEdited = 1;
+  for (i = 0; i < 3; i++) {
+    prevTime[i] = time[i];
+  }
+  isTimerDisplayEdited = 1;
 }
 
 void addTime(unsigned char hours, unsigned char minutes,
              unsigned char seconds) {
   unsigned char i;
 
-  time[0] += seconds;
-  if (time[0] >= 60) {
-    time[0] -= 60;
-    time[1]++;
+  time[Time_SECONDS] += seconds;
+  if (time[Time_SECONDS] >= 60) {
+    time[Time_SECONDS] -= 60;
+    time[Time_MINUTES]++;
   }
-  time[1] += minutes;
-  if (time[1] >= 60) {
-    time[1] -= 60;
-    time[2]++;
+  time[Time_MINUTES] += minutes;
+  if (time[Time_MINUTES] >= 60) {
+    time[Time_MINUTES] -= 60;
+    time[Time_HOURS]++;
   }
 
-  time[2] += hours;
-  if (time[2] >= 24) {
+  time[Time_HOURS] += hours;
+  if (time[Time_HOURS] >= 24) {
     for (i = 0; i < 3; i++) {
       time[i] = 0;
     }
@@ -184,14 +195,14 @@ void addTime(unsigned char hours, unsigned char minutes,
 
 void subtractTime(unsigned char hours, unsigned char minutes,
                   unsigned char seconds) {
-  if (seconds <= time[0]) {
-    time[0] -= seconds;
+  if (seconds <= time[Time_SECONDS]) {
+    time[Time_SECONDS] -= seconds;
   }
-  if (minutes <= time[1]) {
-    time[1] -= minutes;
+  if (minutes <= time[Time_MINUTES]) {
+    time[Time_MINUTES] -= minutes;
   }
-  if (hours <= time[2]) {
-    time[2] -= hours;
+  if (hours <= time[Time_HOURS]) {
+    time[Time_HOURS] -= hours;
   }
 
   updateTime();
@@ -201,13 +212,13 @@ void handleMultiplexKeyboard() {
   unsigned char i;
 
   if (isMultiplexKeyup(MultiplexKeyboardKey_LEFT)) {
-    update7SegmentDisplaySection(min(edited7SegmentDisplaySection + 1, 2));
+    timerDisplayUpdateSection(min(timerDisplayEditedSection + 1, 2));
   }
   if (isMultiplexKeyup(MultiplexKeyboardKey_RIGHT)) {
-    update7SegmentDisplaySection(max(edited7SegmentDisplaySection, 1) - 1);
+    timerDisplayUpdateSection(max(timerDisplayEditedSection, 1) - 1);
   }
 
-  if (!is7SegmentDisplayEdited) {
+  if (!isTimerDisplayEdited) {
     return;
   }
 
@@ -216,24 +227,24 @@ void handleMultiplexKeyboard() {
       time[i] = prevTime[i];
     }
     updateTime();
-    is7SegmentDisplayEdited = 0;
+    isTimerDisplayEdited = 0;
   }
   if (isMultiplexKeyup(MultiplexKeyboardKey_ENTER)) {
-    is7SegmentDisplayEdited = 0;
+    isTimerDisplayEdited = 0;
   }
   if (isMultiplexKeyup(MultiplexKeyboardKey_UP)) {
-    if (edited7SegmentDisplaySection == 2) {
+    if (timerDisplayEditedSection == Time_HOURS) {
       addTime(1, 0, 0);
-    } else if (edited7SegmentDisplaySection == 1) {
+    } else if (timerDisplayEditedSection == Time_MINUTES) {
       addTime(0, 1, 0);
     } else {
       addTime(0, 0, 1);
     }
   }
   if (isMultiplexKeyup(MultiplexKeyboardKey_DOWN)) {
-    if (edited7SegmentDisplaySection == 2) {
+    if (timerDisplayEditedSection == Time_HOURS) {
       subtractTime(1, 0, 0);
-    } else if (edited7SegmentDisplaySection == 1) {
+    } else if (timerDisplayEditedSection == Time_MINUTES) {
       subtractTime(0, 1, 0);
     } else {
       subtractTime(0, 0, 1);
@@ -243,7 +254,7 @@ void handleMultiplexKeyboard() {
 
 void main() {
   initTimer0();
-  init7SegmentDisplay();
+  timerDisplayinit();
   initMultiplexKeyboard();
 
   while (1) {
@@ -255,11 +266,11 @@ void main() {
       P1_5 = !P1_5;
       counter -= TIMER_REFRESH_RATE;
 
-      if (!is7SegmentDisplayEdited) {
+      if (!isTimerDisplayEdited) {
         addTime(0, 0, 1);
       }
     }
-    refresh7SegmentDisplay();
+    timerDisplayRefresh();
   }
 }
 
