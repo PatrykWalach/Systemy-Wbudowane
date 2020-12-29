@@ -21,6 +21,11 @@ volatile unsigned char isTimerDisplayEdited;
 
 __xdata __at(0x0FF38) volatile unsigned char DISPLAY_DATA;
 __xdata __at(0x0FF30) volatile unsigned char DISPLAY_REFRESHED;
+__xdata __at(0x0FF22) volatile unsigned char CSKB1;
+__xdata __at(0x0FF80) volatile unsigned char LCD_WRITE_COMMAND;
+__xdata __at(0x0FF81) volatile unsigned char LCD_WRITE_DATA;
+__xdata __at(0x0FF82) volatile unsigned char LCD_READ_COMMAND;
+__xdata __at(0x0FF83) volatile unsigned char LCD_READ_DATA;
 
 __code unsigned char timerDisplayDigitToData[] = {
     0x3F,  // ;0
@@ -46,7 +51,8 @@ void timerDisplayRefresh() {
   DISPLAY_REFRESHED = 1 << timerDisplayRefreshed;
 
   DISPLAY_DATA =
-      timerDisplayDigitToData[timerDisplayDigits[timerDisplayRefreshed]];
+      timerDisplayDigitToData[timerDisplayDigits[timerDisplayRefreshed]] |
+      ((timerDisplayRefreshed && timerDisplayRefreshed % 2 == 0) << 7);
 
   P1_6 = 0;
 }
@@ -137,6 +143,30 @@ void readMultiplexKeyboard() {
 
 unsigned char isMultiplexKeyup(unsigned char key) {
   return (multiplexKeyups & key) == key;
+}
+
+enum MatrixKeyboardKey {
+  MatrixKeyboardKey_LEFT = 1 << 2,
+  MatrixKeyboardKey_RIGHT = 1 << 3,
+  MatrixKeyboardKey_UP = 1 << 4,
+  MatrixKeyboardKey_DOWN = 1 << 5,
+  MatrixKeyboardKey_ESC = 1 << 6,
+  MatrixKeyboardKey_ENTER = 1 << 7,
+};
+
+unsigned char matrixKeysPressed;
+unsigned char previousMatrixKeysPressed;
+unsigned char matrixKeyups;
+
+void readMatrixKeyboard() {
+  previousMatrixKeysPressed = matrixKeysPressed;
+  matrixKeysPressed = ~CSKB1;
+  matrixKeyups =
+      (previousMatrixKeysPressed ^ matrixKeysPressed) & matrixKeysPressed;
+}
+
+unsigned char isMatrixKeyup(unsigned char key) {
+  return (matrixKeyups & key) == key;
 }
 
 void updateTime() {
@@ -252,14 +282,88 @@ void handleMultiplexKeyboard() {
   }
 }
 
+void LCDwaitWhileBusy() {
+  while ((LCD_READ_COMMAND & (1 << 7)) != 0) {
+  }
+}
+
+void LCDcommand(unsigned char command) {
+  LCDwaitWhileBusy();
+  LCD_WRITE_COMMAND = command;
+}
+
+#define historyLength 7
+__xdata __at(0x4000) volatile char history[historyLength][16];
+
+unsigned char historyIndex;
+unsigned char historyWriteIndex;
+
+void writeLCD(unsigned char write) {
+  LCDwaitWhileBusy();
+  LCD_WRITE_DATA = write;
+}
+
+void setHistoryIndex(unsigned char nextHistoryIndex) {
+  unsigned char i;
+  historyIndex = nextHistoryIndex;
+  LCDcommand(0b10000000);
+  for (i = 0; i < 16; i++) {
+    writeLCD(history[historyIndex][i]);
+  }
+  LCDcommand(0b11000000);
+  for (i = 0; i < 16; i++) {
+    writeLCD(history[(historyIndex ? historyIndex : historyLength) - 1][i]);
+  }
+}
+
+void handleMatrixKeyboard() {
+  unsigned char nextHistoryIndex;
+  if (isMatrixKeyup(MatrixKeyboardKey_UP)) {
+    nextHistoryIndex = (historyIndex + 1) % historyLength;
+    if (nextHistoryIndex != historyWriteIndex) {
+      setHistoryIndex(nextHistoryIndex);
+    }
+  }
+  if (isMatrixKeyup(MatrixKeyboardKey_DOWN)) {
+    nextHistoryIndex = (historyIndex ? historyIndex : historyLength) - 1;
+    if (nextHistoryIndex != historyWriteIndex) {
+      setHistoryIndex(nextHistoryIndex);
+    }
+  }
+}
+
+void initLCD() {
+  LCDcommand(0b111000);
+  LCDcommand(0b1111);
+  LCDcommand(0b110);
+  LCDcommand(0b1);
+
+  historyIndex = 0;
+  historyWriteIndex = 0;
+}
+
+void historyWrite(char* command) {
+  unsigned char i;
+  for (i = 0; i < 16; i++) {
+    history[historyWriteIndex][i] = command[i];
+  }
+  setHistoryIndex(historyWriteIndex);
+  historyWriteIndex++;
+  historyWriteIndex %= historyLength;
+}
+
 void main() {
   initTimer0();
   timerDisplayinit();
   initMultiplexKeyboard();
+  initLCD();
 
   while (1) {
     readMultiplexKeyboard();
     handleMultiplexKeyboard();
+
+    readMatrixKeyboard();
+    handleMatrixKeyboard();
 
     if (hasSecondPassed) {
       hasSecondPassed = 0;
@@ -284,5 +388,7 @@ void handleTimer0Interrupt(void) __interrupt(1) {
   }
   hasSecondPassed = 1;
 }
+
+// historyWrite("1             OK");
 
 void handleSerialPortInterrupt(void) __interrupt(4) {}
