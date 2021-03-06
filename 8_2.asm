@@ -1,0 +1,31 @@
+ORG 0000h
+_RESET:
+    LJMP _INIT
+ORG 0100h
+_INIT:
+    MOV SCON, #01010000b
+    ANL TMOD, #00101111b
+    ORL TMOD, #00100000b
+    MOV TL1, #0FDh
+    MOV TH1, #0FDh
+    ANL PCON, #01111111b
+    CLR TF1
+    SETB TR1
+_LOOP:
+    JNB RI, _LOOP10
+    CLR RI
+    MOV R7, #0d
+    SETB TI
+_LOOP10:
+    JNB TI, _LOOP
+    CLR TI
+    MOV A, R7
+    INC R7
+    MOV DPTR, #_MESSAGE
+    MOVC A, @A+DPTR
+    JZ _LOOP
+    MOV SBUF, A
+    LJMP _LOOP
+_MESSAGE:
+    DB 'WITAJ', 013d, 010d, 0d
+END

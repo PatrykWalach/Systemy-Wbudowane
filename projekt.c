@@ -25,7 +25,6 @@ __xdata __at(0x0FF22) volatile unsigned char CSKB1;
 __xdata __at(0x0FF80) volatile unsigned char LCD_WRITE_COMMAND;
 __xdata __at(0x0FF81) volatile unsigned char LCD_WRITE_DATA;
 __xdata __at(0x0FF82) volatile unsigned char LCD_READ_COMMAND;
-__xdata __at(0x0FF83) volatile unsigned char LCD_READ_DATA;
 
 __code unsigned char timerDisplayDigitToData[] = {
     0x3F,  // ;0
@@ -255,7 +254,7 @@ void LCDwaitWhileBusy() {
   }
 }
 
-void LCDcommand(unsigned char command) {
+void LCDCommand(unsigned char command) {
   LCDwaitWhileBusy();
   LCD_WRITE_COMMAND = command;
 }
@@ -274,11 +273,11 @@ void writeLCD(unsigned char write) {
 void setHistoryIndex(unsigned char nextHistoryIndex) {
   unsigned char i;
   historyIndex = nextHistoryIndex;
-  LCDcommand(0b10000000);
+  LCDCommand(0b10000000);
   for (i = 0; i < 16; i++) {
     writeLCD(history[historyIndex][i]);
   }
-  LCDcommand(0b11000000);
+  LCDCommand(0b11000000);
   for (i = 0; i < 16; i++) {
     writeLCD(history[(historyIndex ? historyIndex : historyLength) - 1][i]);
   }
@@ -302,10 +301,10 @@ void handleMatrixKeyboard() {
 
 void initLCD() {
   unsigned char i, j;
-  LCDcommand(0b111000);
-  LCDcommand(0b1111);
-  LCDcommand(0b110);
-  LCDcommand(0b1);
+  LCDCommand(0b111000);
+  LCDCommand(0b1111);
+  LCDCommand(0b110);
+  LCDCommand(0b1);
 
   historyIndex = 0;
   for (i = 0; i < historyLength; i++) {
@@ -314,16 +313,6 @@ void initLCD() {
     }
   }
   historyWriteIndex = 0;
-}
-
-void historyWrite(char* command) {
-  unsigned char i;
-  for (i = 0; i < 16; i++) {
-    history[historyWriteIndex][i] = command[i];
-  }
-  setHistoryIndex(historyWriteIndex);
-  historyWriteIndex++;
-  historyWriteIndex %= historyLength;
 }
 
 __bit isSending;
@@ -342,6 +331,16 @@ enum Commands {
 
 unsigned char prevCommandInterruptedAt;
 volatile unsigned char commandInterruptedAt;
+
+void historyWrite() {
+  unsigned char i;
+  for (i = 0; i < 16; i++) {
+    history[historyWriteIndex][i] = receiveBuffer[i];
+  }
+  setHistoryIndex(historyWriteIndex);
+  historyWriteIndex++;
+  historyWriteIndex %= historyLength;
+}
 
 void initCommands() {
   unsigned char i = 0;
@@ -403,6 +402,9 @@ __code volatile unsigned char testsLengths[3] = {3, 4, 12};
 
 unsigned char isCommand(unsigned char* string, unsigned char command) {
   unsigned char i;
+  if (receiveBufferIndex > testsLengths[command]) {
+    return 0;
+  }
   for (i = 0; i < testsLengths[command]; i++) {
     if ((string[i] < tests[command][0][i]) ||
         (string[i] > tests[command][1][i])) {
@@ -430,7 +432,7 @@ void handleSerialPortInterrupt(void) __interrupt(SI0_VECTOR) {
 
 void handleCommands() {
   unsigned char i;
-  unsigned char ok = 1;
+  unsigned char isOk = 1;
   if (!receiveBufferIndex || prevCommandInterruptedAt != commandInterruptedAt) {
     return;
   }
@@ -455,10 +457,10 @@ void handleCommands() {
       sendBuffer[sendBufferIndex++] = (time[i] / 10) + '0';
     }
   } else {
-    ok = 0;
+    isOk = 0;
   }
 
-  if (ok) {
+  if (isOk) {
     receiveBuffer[13] = ' ';
     receiveBuffer[14] = 'O';
     receiveBuffer[15] = 'K';
@@ -468,7 +470,7 @@ void handleCommands() {
     receiveBuffer[15] = 'R';
   }
 
-  historyWrite(receiveBuffer);
+  historyWrite();
 
   for (i = 0; i < receiveBufferIndex; i++) {
     receiveBuffer[i] = ' ';
@@ -485,11 +487,11 @@ void handleSend() {
 }
 
 void main() {
+  initCommands();
   initTimer0();
   initTimerDisplay();
   initMultiplexKeyboard();
   initLCD();
-  initCommands();
 
   while (1) {
     handleMultiplexKeyboard();
@@ -497,7 +499,6 @@ void main() {
     readMatrixKeyboard();
     handleMatrixKeyboard();
 
-    handleCommands();
     handleSend();
 
     if (!hasSecondPassed) {
@@ -506,8 +507,7 @@ void main() {
     hasSecondPassed = 0;
     counter -= TIMER_REFRESH_RATE_0;
 
-    P1_5 = !P1_5;
-
+    handleCommands();
     prevCommandInterruptedAt = commandInterruptedAt;
 
     if (!isTimerDisplayEdited) {

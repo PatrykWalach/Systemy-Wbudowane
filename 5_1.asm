@@ -1,0 +1,279 @@
+_LED DATA 029h
+indicator6 DATA 030h
+indicator5 DATA 031h
+indicator4 DATA 032h
+indicator3 DATA 033h
+indicator2 DATA 034h
+indicator1 DATA 035h
+_ACTIVE_REFRESH DATA 036h
+_KBD_KOD DATA 037h
+_KBD_PREV DATA 038h
+;_KBD_FLG BIT 00h
+_ACTIVE_KBD DATA 039h
+
+ORG 0000h
+_RESET:
+    LJMP _INIT
+ORG 0100h
+_INIT:
+    MOV _ACTIVE_KBD, #1b
+    MOV _KBD_KOD, #0b
+    MOV _KBD_PREV, _KBD_KOD
+    ;CLR _KBD_FLG
+    LCALL _7SEG_INIT
+_LOOP:
+    LCALL _DELAY
+
+    LCALL _7SEG_REFRESH
+    LCALL _KBD_REFRESH
+
+    MOV A, _KBD_PREV
+    XRL A, _KBD_KOD
+    ANL A, _KBD_KOD
+
+    CJNE A, #0d, _R
+
+    MOV A, _KBD_PREV
+    XRL A, _KBD_KOD
+    ANL A, #00000001b
+
+    CJNE A, #0d, _F
+    JMP _LOOP_END
+_F:
+    CJNE R0, #00000001b, _LOOP_END
+    SETB P1.7
+    JMP _LOOP_END
+_R:
+    ;CLR _KBD_FLG
+    MOV R0, A
+
+    CJNE R0, #00000001b,_CD30
+    CLR P1.7
+    JMP _LOOP_END
+_CD30:
+    CJNE R0, #00000010b,_CD40
+    ;esc
+    LCALL _7SEG_INIT
+    JMP _LOOP_END
+_CD40:
+    CJNE R0, #00000100b,_CD50
+    ;->
+    MOV A,_ACTIVE_KBD
+    CJNE A, #1b, _ELSE50
+    JMP _LOOP_END
+_ELSE50:
+    RR A
+    MOV _ACTIVE_KBD, A
+    JMP _LOOP_END
+_CD50:
+    CJNE R0, #00001000b,_CD60
+    ;^
+    MOV A, _ACTIVE_KBD
+    LCALL _ACTIVE_LOAD
+    MOV A, @R1
+    ;MOV DPTR, #_NUMBERS
+    ;MOVC A, @A+DPTR
+    CJNE A, #9d, _CD51
+    JMP _LOOP_END
+_CD51:
+    INC A
+    MOV @R1, A
+
+    JMP _LOOP_END
+_CD60:
+    CJNE R0, #00010000b,_CD70
+    ;!^
+    MOV A, _ACTIVE_KBD
+    LCALL _ACTIVE_LOAD
+    MOV A, @R1
+    ;MOV DPTR, #_NUMBERS
+    ;MOVC A, @A+DPTR
+    CJNE A, #0d, _CD61
+    JMP _LOOP_END
+_CD61:
+    DEC A
+    MOV @R1, A
+    JMP _LOOP_END
+_CD70:
+    CJNE R0, #00100000b,_CD80
+    ;<-
+    MOV A,_ACTIVE_KBD
+    CJNE A, #100000b, _ELSE80
+    JMP _LOOP_END
+_ELSE80:
+    RL A
+    MOV _ACTIVE_KBD, A
+    JMP _LOOP_END
+_CD80:
+    ;SETB P1.7
+    ;MOV _KBD_KOD,#0d
+_LOOP_END:
+    LJMP _LOOP
+_ACTIVE_LOAD:
+    CJNE A, #01h, _ELSE1
+    MOV R1, #indicator1
+    JMP _END
+_ELSE1:
+    CJNE A, #02h, _ELSE2
+    MOV R1, #indicator2
+    JMP _END
+_ELSE2:
+    CJNE A, #04h, _ELSE3
+    MOV R1, #indicator3
+    JMP _END
+_ELSE3:
+    CJNE A, #08h, _ELSE4
+    MOV R1, #indicator4
+    JMP _END
+_ELSE4:
+    CJNE A, #10h, _ELSE5
+    MOV R1, #indicator5
+    JMP _END
+_ELSE5:
+    CJNE A, #20h, _END
+    MOV R1, #indicator6
+_END:
+    RET
+_7SEG_REFRESH:
+    SETB P1.6
+
+    MOV A, _ACTIVE_REFRESH
+    RR A
+    CJNE A, #80h, _ELSE
+    RR A
+_ELSE:
+    MOV _ACTIVE_REFRESH, A
+    MOV DPTR, #0FF30h
+    MOVX @DPTR, A
+
+
+    CJNE A, #40h, _END2
+    MOV A, _LED
+    JMP _END3
+_END2:
+    LCALL _ACTIVE_LOAD
+
+    MOV DPTR, #_NUMBERS
+    MOV A, @R1
+    MOVC A, @A+DPTR
+_END3:
+
+    MOV DPTR, #0FF38H
+    MOVX @DPTR, A
+
+    CLR P1.6
+    RET
+_7SEG_INIT:
+    MOV _ACTIVE_REFRESH, #40h
+    MOV A, _ACTIVE_REFRESH
+    MOV DPTR, #0FF30h
+    MOVX @DPTR, A
+
+    MOV _LED, #10h
+    MOV indicator6, #5d
+    MOV indicator5, #4d
+    MOV indicator4, #3d
+    MOV indicator3, #2d
+    MOV indicator2, #1d
+    MOV indicator1, #0d
+
+    LCALL _7SEG_REFRESH
+    RET
+_DELAY:
+    MOV R6, #2d
+LABEL1:
+    MOV R7, #2d
+LABEL2:
+    DJNZ R7,LABEL2
+    DJNZ R6,LABEL1
+    RET
+_KBD_REFRESH:
+    SETB P1.6
+
+    MOV _KBD_PREV, _KBD_KOD
+    ;MOV _KBD_KOD, #0d
+    ;wskazujemy interesujacy nas wskaznik
+    MOV DPTR, #0FF30h
+    MOV A, #00000001b
+    MOVX @DPTR, A
+    MOV A, _KBD_KOD
+    JNB P3.5, _ELSE00
+    ORL A, #00000001b
+    JMP _END00
+_ELSE00:
+    ANL A, #11111110b
+_END00:
+    MOV _KBD_KOD, A
+
+    MOV A, #00000010b
+    MOVX @DPTR, A
+    MOV A, _KBD_KOD
+    JNB P3.5, _ELSE01
+    ORL A, #00000010b
+    JMP _END01
+_ELSE01:
+    ANL A, #11111101b
+_END01:
+    MOV _KBD_KOD, A
+
+    MOV A, #00000100b
+    MOVX @DPTR, A
+    MOV A, _KBD_KOD
+    JNB P3.5, _ELSE02
+    ORL A, #00000100b
+    JMP _END02
+_ELSE02:
+    ANL A, #11111011b
+_END02:
+    MOV _KBD_KOD, A
+
+    MOV A, #00001000b
+    MOVX @DPTR, A
+    MOV A, _KBD_KOD
+    JNB P3.5, _ELSE03
+    ORL A, #00001000b
+    JMP _END03
+_ELSE03:
+    ANL A, #11110111b
+_END03:
+    MOV _KBD_KOD, A
+
+    MOV A, #00010000b
+    MOVX @DPTR, A
+    MOV A, _KBD_KOD
+    JNB P3.5, _ELSE04
+    ORL A, #00010000b
+    JMP _END04
+_ELSE04:
+    ANL A, #11101111b
+_END04:
+    MOV _KBD_KOD, A
+
+    MOV A, #00100000b
+    MOVX @DPTR, A
+    MOV A, _KBD_KOD
+    JNB P3.5, _ELSE05
+    ORL A, #00100000b
+    JMP _END05
+_ELSE05:
+    ANL A, #11011111b
+_END05:
+    MOV _KBD_KOD, A
+
+    MOV A,_ACTIVE_REFRESH
+    MOV DPTR,#0FF30h
+    MOVX @DPTR,A
+    CLR P1.6
+    RET
+_NUMBERS:
+    DB 3Fh ;0
+    DB 06h ;1
+    DB 5Bh ;2
+    DB 4Fh ;3
+    DB 66h ;4
+    DB 6Dh ;5
+    DB 7Dh ;6
+    DB 07h ;7
+    DB 7Fh ;8
+    DB 6Fh ;9
+END

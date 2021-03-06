@@ -1,0 +1,14 @@
+ORG 0000h
+_RESET:
+    LJMP _INIT
+ORG 0100h
+_INIT:
+    MOV A, #16
+_FOR:
+    DEC A
+    JZ _FI
+    JMP _FOR
+_FI:
+_LOOP:
+    LJMP _LOOP
+END

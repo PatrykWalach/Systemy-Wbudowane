@@ -1,0 +1,2 @@
+Rozpoczęcie rozpoznania rozkazu na podstawie czasu milczenia.
+Zaimplementowano wszystkie punkty.

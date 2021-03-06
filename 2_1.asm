@@ -1,0 +1,17 @@
+ORG 0000h
+_RESET:
+    LJMP _INIT
+ORG 0100h
+_INIT:
+    CLR C
+    MOV A, #51
+    SUBB A, #49
+    JB ACC.0, _FI
+_IF:
+    CLR P1.7
+_FI:
+_LOOP:
+    LJMP _LOOP
+END
+
+ 
